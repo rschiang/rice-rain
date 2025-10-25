@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>撒米：滑鼠長按傾倒米粒，會互相堆疊直到滿版</title>
   <style>
-    html, body { height: 100%; margin: 0; background: #0b0c10; }
+    html, body { height: 100%; margin: 0; background: #ffb11b; }
     #app { position: fixed; inset: 0; overflow: hidden; }
     #overlay {
       position: fixed; left: 12px; top: 12px; color: #e8edf2; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
@@ -15,10 +15,16 @@
     #overlay b { color: #fff; }
     #overlay kbd { background:#111; border:1px solid #222; border-bottom-color:#333; border-radius:6px; padding:2px 6px; }
     .link { color:#b7ffaf; text-decoration: underline; cursor: pointer; }
+    #title {
+      position: fixed; top: 5vw; right: 5vw;
+      font-size: 10vh; font-family: "jf-kamabit-1.0", "UD Digi Kyokasho N-B", YuKyokasho, cursive; font-weight: 900;
+      writing-mode: vertical-rl;
+    }
   </style>
 </head>
 <body>
   <div id="app"></div>
+  <div id="title">臨時撒米</div>
   <div id="overlay">
     <div><b>用法：</b>按住滑鼠或觸控螢幕即可從指標尖端倒出「米粒」。</div>
     <div>米粒會彼此碰撞、由下往上堆疊，最終填滿畫面。</div>
@@ -47,7 +53,7 @@
       options: {
         width: window.innerWidth,
         height: window.innerHeight,
-        background: '#0b0c10',
+        background: '#ffb11b',
         wireframes: false,
         pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
       }
