@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>米粒雨：滑鼠長按傾倒米粒，會互相堆疊直到滿版</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0b0c10; }
+    #app { position: fixed; inset: 0; overflow: hidden; }
+    #overlay {
+      position: fixed; left: 12px; top: 12px; color: #e8edf2; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: rgba(0,0,0,.35); padding: 10px 12px; border-radius: 12px; user-select: none;
+      backdrop-filter: blur(4px);
+    }
+    #overlay b { color: #fff; }
+    #overlay kbd { background:#111; border:1px solid #222; border-bottom-color:#333; border-radius:6px; padding:2px 6px; }
+    .link { color:#b7ffaf; text-decoration: underline; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="overlay">
+    <div><b>用法：</b>按住滑鼠或觸控螢幕即可從指標尖端倒出「米粒」。</div>
+    <div>米粒會彼此碰撞、由下往上堆疊，最終填滿畫面。</div>
+    <div>提示：按住 <kbd>Shift</kbd> 會加速傾倒；按 <kbd>C</kbd> 清空。</div>
+  </div>
+
+  <!-- Matter.js 物理引擎 -->
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+  <script>
+  (function() {
+    const {
+      Engine, Render, Runner, Bodies, Composite, Composites, Common,
+      Body, Events, Vector, Bounds
+    } = Matter;
+
+    // --- 基本場景 ---
+    const engine = Engine.create({ enableSleeping: true });
+    const world = engine.world;
+
+    const app = document.getElementById('app');
+
+    // 以全螢幕 Canvas 呈現；使用 Matter.Render 直接繪製實體（wireframes: false）
+    const render = Render.create({
+      element: app,
+      engine,
+      options: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        background: '#0b0c10',
+        wireframes: false,
+        pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      }
+    });
+
+    Render.run(render);
+    const runner = Runner.create();
+    Runner.run(runner, engine);
+
+    // --- 邊界（地板與左右牆）---
+    const WALL_THICK = 80;
+    let floor, leftWall, rightWall;
+
+    function makeWalls() {
+      const W = render.options.width;
+      const H = render.options.height;
+      const half = WALL_THICK/2;
+
+      if (floor) Composite.remove(world, [floor, leftWall, rightWall], true);
+
+      floor = Bodies.rectangle(W/2, H + half, W + WALL_THICK*2, WALL_THICK, {
+        isStatic: true,
+        render: { fillStyle: '#0f1117' }
+      });
+      leftWall = Bodies.rectangle(-half, H/2, WALL_THICK, H*2, {
+        isStatic: true,
+        render: { fillStyle: '#0f1117' }
+      });
+      rightWall = Bodies.rectangle(W + half, H/2, WALL_THICK, H*2, {
+        isStatic: true,
+        render: { fillStyle: '#0f1117' }
+      });
+
+      Composite.add(world, [floor, leftWall, rightWall]);
+    }
+
+    makeWalls();
+
+    // --- 米粒參數 ---
+    const RICE_MIN = 3;    // 短邊像素
+    const RICE_MAX = 5;    // 短邊像素
+    const RATIO = 2.2;     // 長短邊比例（細長一點像米）
+    const RICE_PER_TICK = 3; // 每個模擬步驟的產量（按住時）
+    const RICE_PER_TICK_FAST = 8; // Shift 加速
+    const MAX_BODIES = 3500; // 上限避免爆記憶體
+
+    // 米粒外觀 & 物理性質預設
+    function createRice(x, y) {
+      const h = Common.random(RICE_MIN, RICE_MAX);
+      const w = h * RATIO;
+      const angle = Common.random(-Math.PI, Math.PI);
+
+      return Bodies.rectangle(x, y, w, h, {
+        angle,
+        chamfer: { radius: Math.min(w, h) * 0.45 },
+        friction: 0.28,
+        frictionStatic: 0.9,
+        restitution: 0.05,
+        density: 0.0007,
+        render: {
+          fillStyle: '#f7f7f5',
+          strokeStyle: '#e8e8e4',
+          lineWidth: 1
+        }
+      });
+    }
+
+    // --- 指標傾倒控制 ---
+    let pouring = false;
+    let pointer = { x: window.innerWidth/2, y: 10 };
+    let shiftFast = false;
+
+    function spawnAtPointer() {
+      const n = shiftFast ? RICE_PER_TICK_FAST : RICE_PER_TICK;
+      const bodies = [];
+      for (let i=0;i<n;i++) {
+        // 在指標附近做一點隨機抖動，避免完全重疊
+        const jx = Common.random(-1.5, 1.5);
+        const jy = Common.random(-1.5, 1.5);
+        bodies.push(createRice(pointer.x + jx, pointer.y + jy));
+      }
+      Composite.add(world, bodies);
+    }
+
+    // 控制事件（滑鼠 + 觸控 + 鍵盤）
+    const setPointer = (x, y) => {
+      pointer.x = x; pointer.y = y;
+    };
+
+    window.addEventListener('pointerdown', (e) => { pouring = true; setPointer(e.clientX, e.clientY); });
+    window.addEventListener('pointerup',   () => { pouring = false; });
+    window.addEventListener('pointercancel', () => { pouring = false; });
+    window.addEventListener('pointermove', (e) => { setPointer(e.clientX, e.clientY); });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Shift') shiftFast = true;
+      if (e.key.toLowerCase() === 'c') clearRice();
+    });
+    window.addEventListener('keyup', (e) => { if (e.key === 'Shift') shiftFast = false; });
+
+    // 每個更新步驟：如果在傾倒，就生成幾顆米
+    Events.on(runner, 'afterTick', () => {
+      if (pouring) {
+        const count = Composite.allBodies(world).length;
+        if (count < MAX_BODIES) spawnAtPointer();
+      }
+      // 清理離畫面太遠的實體（避免爆掉）
+      pruneBodies();
+    });
+
+    function clearRice() {
+      const bodies = Composite.allBodies(world).filter(b => !(b.isStatic));
+      Composite.remove(world, bodies);
+    }
+
+    function pruneBodies() {
+      const H = render.options.height;
+      const OUT = H * 3; // 超出螢幕底部很遠就清除
+      const toRemove = [];
+      Composite.allBodies(world).forEach(b => {
+        if (!b.isStatic && b.position.y > OUT) toRemove.push(b);
+      });
+      if (toRemove.length) Composite.remove(world, toRemove);
+    }
+
+    // 滿版偵測（近似）：當最高的米粒高度小於某閾值，可以顯示完成訊息（可自行擴充）
+    // 這裡先保留 API 供你未來想顯示「滿版了！」可以使用。
+    function highestPileY() {
+      let minY = Infinity;
+      Composite.allBodies(world).forEach(b => {
+        if (!b.isStatic) {
+          const top = b.bounds.min.y;
+          if (top < minY) minY = top;
+        }
+      });
+      return minY;
+    }
+
+    // 視窗縮放時，重設畫面尺寸與牆面位置
+    function resize() {
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      render.options.width = W;
+      render.options.height = H;
+      render.canvas.width = W * render.options.pixelRatio;
+      render.canvas.height = H * render.options.pixelRatio;
+      render.canvas.style.width = W + 'px';
+      render.canvas.style.height = H + 'px';
+
+      makeWalls();
+    }
+    window.addEventListener('resize', resize);
+
+    // 初始一點點米粒，讓地面有感覺
+    for (let i=0; i<80; i++) {
+      const x = Common.random(40, window.innerWidth-40);
+      const y = Common.random(-200, -20);
+      Composite.add(world, createRice(x, y));
+    }
+
+    // 調整重力方向（往下）
+    engine.world.gravity.y = 1.05; // 稍強一點讓堆疊更穩定
+
+  })();
+  </script>
+</body>
+</html>
